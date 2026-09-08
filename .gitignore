@@ -1,0 +1,8 @@
+/build/
+/local/
+__pycache__/
+*.cxlog
+*.log
+*.dxvk-cache
+*.dxvk-state-cache
+.DS_Store
