@@ -1,0 +1,28 @@
+--- a/dlls/ntoskrnl.exe/ntoskrnl.c
++++ b/dlls/ntoskrnl.exe/ntoskrnl.c
+@@ -2640,6 +2640,14 @@
+     return thread->kthread.id.UniqueThread;
+ }
+ 
++/* Return the owning process already stored in Wine's thread object.
++ * The caller borrows this pointer; this query does not add a reference. */
++PEPROCESS WINAPI PsGetThreadProcess(PETHREAD thread)
++{
++    TRACE("%p -> %p\n", thread, thread->kthread.process);
++    return thread->kthread.process;
++}
++
+ /*********************************************************************
+  *           PsGetThreadProcessId    (NTOSKRNL.@)
+  */
+--- a/dlls/ntoskrnl.exe/ntoskrnl.exe.spec
++++ b/dlls/ntoskrnl.exe/ntoskrnl.exe.spec
+@@ -941,7 +941,7 @@
+ @ stub PsGetThreadFreezeCount
+ @ stub PsGetThreadHardErrorsAreDisabled
+ @ stdcall PsGetThreadId(ptr)
+-@ stub PsGetThreadProcess
++@ stdcall PsGetThreadProcess(ptr)
+ @ stdcall PsGetThreadProcessId(ptr)
+ @ stub PsGetThreadSessionId
+ @ stub PsGetThreadTeb

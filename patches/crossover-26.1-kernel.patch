@@ -1,0 +1,278 @@
+--- a/dlls/ntoskrnl.exe/sync.c
++++ b/dlls/ntoskrnl.exe/sync.c
+@@ -438,6 +438,40 @@
+     KeInitializeEvent(&mutex->Event, SynchronizationEvent, FALSE);
+ }
+ 
++/***********************************************************************
++ *           KeAcquireGuardedMutexUnsafe   (NTOSKRNL.EXE.@)
++ */
++void WINAPI KeAcquireGuardedMutexUnsafe(PKGUARDED_MUTEX mutex)
++{
++    ExAcquireFastMutexUnsafe((PFAST_MUTEX)mutex);
++}
++
++/***********************************************************************
++ *           KeAcquireGuardedMutex   (NTOSKRNL.EXE.@)
++ */
++void WINAPI KeAcquireGuardedMutex(PKGUARDED_MUTEX mutex)
++{
++    /* FIXME: Enter Guarded Region */
++    KeAcquireGuardedMutexUnsafe(mutex);
++}
++
++/***********************************************************************
++ *           KeReleaseGuardedMutexUnsafe   (NTOSKRNL.EXE.@)
++ */
++void WINAPI KeReleaseGuardedMutexUnsafe(PKGUARDED_MUTEX mutex)
++{
++    ExReleaseFastMutexUnsafe((PFAST_MUTEX)mutex);
++}
++
++/***********************************************************************
++ *           KeReleaseGuardedMutex   (NTOSKRNL.EXE.@)
++ */
++void WINAPI KeReleaseGuardedMutex(PKGUARDED_MUTEX mutex)
++{
++    KeReleaseGuardedMutexUnsafe(mutex);
++    /* FIXME: Leave Guarded Region */
++}
++
+ static void CALLBACK ke_timer_complete_proc(PTP_CALLBACK_INSTANCE instance, void *timer_, PTP_TIMER tp_timer)
+ {
+     KTIMER *timer = timer_;
+--- a/dlls/ntoskrnl.exe/ntoskrnl.c
++++ b/dlls/ntoskrnl.exe/ntoskrnl.c
+@@ -2461,6 +2461,22 @@
+     process->header.WaitListHead.Blink = INVALID_HANDLE_VALUE; /* mark as kernel object */
+     NtQueryInformationProcess( handle, ProcessBasicInformation, &process->info, sizeof(process->info), NULL );
+     IsWow64Process( handle, &process->wow64 );
++    process->image_file_name[0] = 0;
++    {
++        DWORD length = 32768;
++        char *path = malloc( length );
++        if (path)
++        {
++            if (QueryFullProcessImageNameA( handle, 0, path, &length ))
++            {
++                const char *name = strrchr( path, '\\' );
++                lstrcpynA( process->image_file_name, name ? name + 1 : path,
++                          sizeof(process->image_file_name) );
++            }
++            else WARN( "Failed to query process image name, error %lu.\n", GetLastError() );
++            free( path );
++        }
++    }
+     return process;
+ }
+ 
+@@ -2509,6 +2525,15 @@
+ {
+     TRACE( "%p -> %Ix\n", process, process->info.UniqueProcessId );
+     return (HANDLE)process->info.UniqueProcessId;
++}
++
++/*********************************************************************
++ *           PsGetProcessImageFileName    (NTOSKRNL.@)
++ */
++char * WINAPI PsGetProcessImageFileName( PEPROCESS process )
++{
++    TRACE( "%p -> %s\n", process, debugstr_a(process->image_file_name) );
++    return process->image_file_name;
+ }
+ 
+ /*********************************************************************
+@@ -2934,6 +2959,48 @@
+     return ret;
+ }
+ 
++/* Inverse of Wine's existing logical identity mapping. An arbitrary physical
++ * address must not become a dereferenceable pointer to uncommitted memory. */
++void *WINAPI MmGetVirtualForPhysical(PHYSICAL_ADDRESS address)
++{
++    MEMORY_BASIC_INFORMATION info;
++    void *pointer = (void *)(ULONG_PTR)address.QuadPart;
++
++    if ((ULONGLONG)(ULONG_PTR)pointer != (ULONGLONG)address.QuadPart || !pointer)
++        return NULL;
++    if (!VirtualQuery(pointer, &info, sizeof(info)) || info.State != MEM_COMMIT ||
++        (info.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
++        return NULL;
++    TRACE("Logical physical address %s -> %p.\n", wine_dbgstr_longlong(address.QuadPart), pointer);
++    return pointer;
++}
++
++struct wine_physical_memory_range
++{
++    PHYSICAL_ADDRESS BaseAddress;
++    LARGE_INTEGER NumberOfBytes;
++};
++
++struct wine_physical_memory_range *WINAPI MmGetPhysicalMemoryRanges(void)
++{
++    SYSTEM_BASIC_INFORMATION info;
++    struct wine_physical_memory_range *ranges;
++    NTSTATUS status;
++
++    if ((status = NtQuerySystemInformation(SystemBasicInformation, &info, sizeof(info), NULL)))
++    {
++        WARN("Failed to query memory information, status %#lx.\n", status);
++        return NULL;
++    }
++    /* Wine exposes one logical physical-memory span. Allocate a fresh,
++     * terminated array: Windows callers own it and release it with ExFreePool. */
++    if (!(ranges = ExAllocatePool(NonPagedPool, 2 * sizeof(*ranges)))) return NULL;
++    memset(ranges, 0, 2 * sizeof(*ranges));
++    ranges[0].BaseAddress.QuadPart = (ULONGLONG)info.MmLowestPhysicalPage * info.PageSize;
++    ranges[0].NumberOfBytes.QuadPart = (ULONGLONG)info.MmNumberOfPhysicalPages * info.PageSize;
++    return ranges;
++}
++
+ /***********************************************************************
+  *           MmMapIoSpace   (NTOSKRNL.EXE.@)
+  */
+@@ -3702,6 +3769,69 @@
+ BOOLEAN WINAPI KeAreAllApcsDisabled(void)
+ {
+     return KeAreApcsDisabled();
++}
++
++/* Like the Wine-derived Endfield fallback, report an unsupported operation
++ * without fabricating kernel dump contents or a successful capture. */
++NTSTATUS WINAPI KeCapturePersistentThreadState(CONTEXT *context, PKTHREAD thread, ULONG code,
++        ULONG_PTR param1, ULONG_PTR param2, ULONG_PTR param3, ULONG_PTR param4, void *buffer)
++{
++    FIXME("context %p, thread %p, code %#lx, parameters %Ix %Ix %Ix %Ix, buffer %p: unsupported.\n",
++          context, thread, code, param1, param2, param3, param4, buffer);
++    return STATUS_NOT_IMPLEMENTED;
++}
++
++/* Wine does not generate Windows kernel crash dumps. Keep real callback
++ * registrations and their lifetime, so drivers may register and unload safely. */
++struct bugcheck_reason_record
++{
++    LIST_ENTRY entry;
++    void (WINAPI *routine)(ULONG, void *, void *, ULONG);
++    unsigned char *component;
++    ULONG_PTR checksum;
++    ULONG reason;
++    UCHAR state;
++};
++static LIST_ENTRY bugcheck_reason_list = { &bugcheck_reason_list, &bugcheck_reason_list };
++DECLARE_CRITICAL_SECTION(bugcheck_cs);
++
++BOOLEAN WINAPI KeRegisterBugCheckReasonCallback(struct bugcheck_reason_record *record,
++        void (WINAPI *routine)(ULONG, void *, void *, ULONG), ULONG reason, unsigned char *component)
++{
++    BOOLEAN result = FALSE;
++    if (!record || !routine || !reason || reason > 7) return FALSE;
++    EnterCriticalSection(&bugcheck_cs);
++    if (!record->state)
++    {
++        record->routine = routine;
++        record->component = component;
++        record->reason = reason;
++        record->checksum = (ULONG_PTR)record + (ULONG_PTR)routine + (ULONG_PTR)component + reason;
++        InsertTailList(&bugcheck_reason_list, &record->entry);
++        record->state = 1; /* BufferInserted */
++        result = TRUE;
++    }
++    LeaveCriticalSection(&bugcheck_cs);
++    TRACE("record %p, reason %lu, registered %u.\n", record, reason, result);
++    return result;
++}
++
++BOOLEAN WINAPI KeDeregisterBugCheckReasonCallback(struct bugcheck_reason_record *record)
++{
++    LIST_ENTRY *entry;
++    BOOLEAN result = FALSE;
++    if (!record) return FALSE;
++    EnterCriticalSection(&bugcheck_cs);
++    for (entry = bugcheck_reason_list.Flink; entry != &bugcheck_reason_list; entry = entry->Flink)
++    {
++        if (entry != &record->entry) continue;
++        RemoveEntryList(entry);
++        record->state = 0; /* BufferEmpty */
++        result = TRUE;
++        break;
++    }
++    LeaveCriticalSection(&bugcheck_cs);
++    return result;
+ }
+ 
+ /***********************************************************************
+--- a/dlls/ntoskrnl.exe/ntoskrnl_private.h
++++ b/dlls/ntoskrnl.exe/ntoskrnl_private.h
+@@ -56,6 +56,7 @@
+     DISPATCHER_HEADER header;
+     PROCESS_BASIC_INFORMATION info;
+     BOOL wow64;
++    char image_file_name[16];
+ };
+ 
+ struct _KTHREAD
+--- a/dlls/ntoskrnl.exe/ntoskrnl.exe.spec
++++ b/dlls/ntoskrnl.exe/ntoskrnl.exe.spec
+@@ -52,12 +52,16 @@
+ @ stdcall -fastcall IofCompleteRequest(ptr long)
+ @ stdcall -arch=!i386 KeAcquireInStackQueuedSpinLock(ptr ptr)
+ @ stdcall -fastcall KeAcquireInStackQueuedSpinLockAtDpcLevel(ptr ptr)
++@ stdcall KeAcquireGuardedMutexUnsafe(ptr)
++@ stdcall KeAcquireGuardedMutex(ptr)
+ @ stdcall KeEnterGuardedRegion()
+ @ stdcall KeExpandKernelStackAndCallout(ptr ptr long)
+ @ stdcall KeExpandKernelStackAndCalloutEx(ptr ptr long long ptr)
+ @ stdcall KeLeaveGuardedRegion()
+ @ stdcall -arch=!i386 KeReleaseInStackQueuedSpinLock(ptr)
+ @ stdcall -fastcall KeReleaseInStackQueuedSpinLockFromDpcLevel(ptr)
++@ stdcall KeReleaseGuardedMutexUnsafe(ptr)
++@ stdcall KeReleaseGuardedMutex(ptr)
+ @ stub KeSetTimeUpdateNotifyRoutine
+ @ stub KefAcquireSpinLockAtDpcLevel
+ @ stub KefReleaseSpinLockFromDpcLevel
+@@ -545,13 +549,13 @@
+ @ stdcall KeBugCheck(long)
+ @ stdcall KeBugCheckEx(long long long long long)
+ @ stdcall KeCancelTimer(ptr)
+-@ stub KeCapturePersistentThreadState
++@ stdcall KeCapturePersistentThreadState(ptr ptr long ptr ptr ptr ptr ptr)
+ @ stdcall KeClearEvent(ptr)
+ @ stub KeConnectInterrupt
+ @ stub KeDcacheFlushCount
+ @ stdcall KeDelayExecutionThread(long long ptr)
+ @ stub KeDeregisterBugCheckCallback
+-@ stub KeDeregisterBugCheckReasonCallback
++@ stdcall KeDeregisterBugCheckReasonCallback(ptr)
+ @ stub KeDetachProcess
+ @ stub KeDisconnectInterrupt
+ @ stdcall KeEnterCriticalRegion()
+@@ -626,7 +630,7 @@
+ @ stub KeReadStateSemaphore
+ @ stub KeReadStateTimer
+ @ stub KeRegisterBugCheckCallback
+-@ stub KeRegisterBugCheckReasonCallback
++@ stdcall KeRegisterBugCheckReasonCallback(ptr ptr long ptr)
+ @ stub KeReleaseInterruptSpinLock
+ @ stub KeReleaseMutant
+ @ stdcall KeReleaseMutex(ptr long)
+@@ -723,9 +727,9 @@
+ @ stdcall MmFreeNonCachedMemory(ptr long)
+ @ stub MmFreePagesFromMdl
+ @ stdcall MmGetPhysicalAddress(ptr)
+-@ stub MmGetPhysicalMemoryRanges
++@ stdcall MmGetPhysicalMemoryRanges()
+ @ stdcall MmGetSystemRoutineAddress(ptr)
+-@ stub MmGetVirtualForPhysical
++@ stdcall MmGetVirtualForPhysical(int64)
+ @ stub MmGrowKernelStack
+ @ stub MmHighestUserAddress
+ @ stdcall MmIsAddressValid(ptr)
+@@ -923,7 +927,7 @@
+ @ stub PsGetProcessExitStatus
+ @ stub PsGetProcessExitTime
+ @ stdcall PsGetProcessId(ptr)
+-@ stub PsGetProcessImageFileName
++@ stdcall PsGetProcessImageFileName(ptr)
+ @ stdcall PsGetProcessInheritedFromUniqueProcessId(ptr)
+ @ stub PsGetProcessJob
+ @ stub PsGetProcessPeb

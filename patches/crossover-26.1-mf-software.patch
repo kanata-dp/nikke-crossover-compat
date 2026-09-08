@@ -1,0 +1,32 @@
+--- a/dlls/mfreadwrite/reader.c
++++ b/dlls/mfreadwrite/reader.c
+@@ -2905,7 +2905,11 @@
+         if (object->async_callback)
+             TRACE("Using async callback %p.\n", object->async_callback);
+ 
+-        IMFAttributes_GetUnknown(attributes, &MF_SOURCE_READER_D3D_MANAGER, &IID_IUnknown, (void **)&object->device_manager);
++        /* Opt-in system-memory output for backends without shared video textures. */
++        if (!GetEnvironmentVariableA("NOP_BRIDGE_MF_SOFTWARE", NULL, 0))
++            IMFAttributes_GetUnknown(attributes, &MF_SOURCE_READER_D3D_MANAGER, &IID_IUnknown, (void **)&object->device_manager);
++        else
++            WARN("NOP bridge: using system-memory video samples.\n");
+         if (object->device_manager)
+         {
+             IUnknown *unk = NULL;
+--- a/dlls/mfplat/main.c
++++ b/dlls/mfplat/main.c
+@@ -9228,6 +9228,14 @@
+     if (!token || !manager)
+         return E_POINTER;
+ 
++    if (GetEnvironmentVariableA("NOP_BRIDGE_MF_NO_DXGI", NULL, 0))
++    {
++        *token = 0;
++        *manager = NULL;
++        WARN("NOP bridge: DXGI video acceleration disabled by configuration.\n");
++        return E_NOTIMPL;
++    }
++
+     if (!(object = calloc(1, sizeof(*object))))
+         return E_OUTOFMEMORY;
+ 
