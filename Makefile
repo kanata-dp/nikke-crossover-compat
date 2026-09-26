@@ -4,7 +4,7 @@ MACFLAGS = -arch x86_64 -mmacosx-version-min=12.0
 WINCC ?= x86_64-w64-mingw32-gcc
 WINCXX ?= x86_64-w64-mingw32-g++
 
-.PHONY: all test clean windows
+.PHONY: all test clean windows webview
 all: build/libnop_bridge.dylib build/native_probe build/wine_bootstrap
 build:
 	mkdir -p build
@@ -24,6 +24,9 @@ build/decoder_test: tests/decoder_test.c src/nop_decode.h | build
 test: all build/decoder_test
 	python3 scripts/test_native.py
 windows: build/windows_probe.exe build/windows_early.exe
+webview: build/intl_service.wrapper.exe
+build/intl_service.wrapper.exe: src/intl_service_wrapper.c | build
+	$(WINCC) -O2 -s -Wall -Wextra -Werror -municode -mwindows $< -o $@
 build/windows_probe.exe: tests/windows_probe.c | build
 	$(WINCC) $(CFLAGS) -static $< -o $@
 build/early.dll: tests/windows_early.c | build

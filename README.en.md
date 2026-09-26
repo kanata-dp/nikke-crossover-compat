@@ -6,14 +6,15 @@
 
 This experimental patch set addresses startup compatibility problems, missing Wine APIs, and black background videos observed while running NIKKE. It also installs a persistent launcher entry inside CrossOver.
 
-**2026-09-22 update: compatibility work for NIKKE PC Global 152.8.11.** On Apple Silicon with CrossOver 26.1, the user confirmed lobby access, combat and a tower run. After restoring the playable configuration, the user again confirmed responsive lobby navigation. Background animation worked and frame rate felt normal.
+**2026-09-26 update: fix the blank “LEVEL INFINITE CAPTCHA NEW” login window.** Verification uses a separate browser host that the earlier launcher fix did not cover. The user confirmed the slider appeared and completed verification manually. **NIKKE PC Global 152.8.13** subsequently reached the lobby with responsive page navigation.
 
-This is the **0.2.0 experimental source update**, adding driver-entry, memory-mapping and process/thread-query compatibility needed by the updated client. See the [update notes](docs/UPDATE-2026-09-22.en.md).
+This **0.2.1 experimental source update** adds source, installation and restore tools for the verification browser. See the [CAPTCHA fix and installation guide](docs/UPDATE-2026-09-26.en.md). Wine kernel/media patches remain at 0.2.0; earlier combat and tower reports on 152.8.11 are in the [previous update](docs/UPDATE-2026-09-22.en.md).
 
 ## What does it address?
 
 - **Startup compatibility:** handle specific register-NOP forms rejected by Rosetta on the tested machine, correct privileged-instruction exception classification, and supply several Wine kernel APIs used during startup.
 - **Black background video:** expose an unsupported DXGI-video capability early enough for the application to take its software fallback.
+- **Blank login CAPTCHA:** pass software-rendering options to the separate INTL WebView host so verification can display. Players still complete verification manually.
 - **Repeatable launching:** keep the runtime in a persistent location and open the official NIKKE launcher from CrossOver's application list.
 - **Blurry graphics:** use CrossOver's High Resolution Mode in the separate bottle. The tested game's stored window size increased from 1388×781 to 2202×1340.
 
@@ -21,7 +22,7 @@ These are observed results for the tested configuration, not a universal fix for
 
 ## Requirements
 
-The current tested environment is **Apple M4 Max, macOS 27.0, CrossOver 26.1, NIKKE Global 152.8.11**. Older records used macOS 26.6.2. Other hardware, CrossOver versions, and future game updates have not been verified.
+The current tested environment is **Apple M4 Max, macOS 27.0, CrossOver 26.1, NIKKE Global 152.8.13**. Earlier combat reports used 152.8.11; older records used macOS 26.6.2. Other hardware, CrossOver versions, and future game updates have not been verified.
 
 You need:
 
@@ -30,6 +31,10 @@ You need:
 3. Xcode Command Line Tools, Python 3, Bison 3, and MinGW-w64 to build the source.
 
 This repository contains source code only. It does not include game assets, ACE files, CrossOver binaries, or account data. The tested bottle already used [li-miniloader-wine-fix](https://github.com/Dorin130/li-miniloader-wine-fix) and a CEF launcher fix. This project does not install those dependencies. Fix the official launcher first if it cannot open.
+
+## Only the CAPTCHA window is blank?
+
+If the launcher opens but login verification shows an empty white window, install the [standalone CAPTCHA fix](docs/UPDATE-2026-09-26.en.md). It needs Python 3 and MinGW-w64, without rebuilding Wine or downloading the game again. Keep using your existing CrossOver entry afterward. Users who already applied this fix and can complete verification do not need to reinstall it.
 
 ## Installation
 
@@ -77,6 +82,8 @@ The runtime lives under `~/Library/Application Support/NIKKE Compatibility` and 
 ## Updating an existing installation
 
 A GitHub source update does not replace your local runtime automatically. Exit the old bottle, rebuild into new output directories, then use the following installation command, replacing the source bottle name:
+
+**Updating the game, updating this repository and updating the runtime behind a saved entry are separate operations.** An old entry can still point to an older runtime; the CAPTCHA fix does not upgrade it. If you already use 0.2.0 and gameplay works, only follow the separate CAPTCHA instructions for this update.
 
 ```sh
 python3 scripts/install_crossover_entry.py \

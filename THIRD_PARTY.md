@@ -48,7 +48,11 @@ No CrossOver registration, licensing, signatures or application files are
 altered by that script.
 
 The prior launcher work referenced `Dorin130/li-miniloader-wine-fix` and a CEF
-software-rendering wrapper. They are not bundled or installed by this project.
+software-rendering wrapper for `tbs_browser.exe`. Those launcher dependencies
+are not bundled or installed by this project. Version 0.2.1 adds an authored
+wrapper for the separate `intl_service.exe` host, plus backup/restore tools.
+Its source is LGPL-2.1-or-later; the official service remains a separately
+installed dependency and is never included in the source package.
 NIKKE assets, ACE files, Intel manuals and Microsoft documentation are not
 redistributed. Product names identify test environments, not affiliation.
 
