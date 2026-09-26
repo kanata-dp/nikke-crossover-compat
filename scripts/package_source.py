@@ -11,6 +11,8 @@ FILES = [
     "src/bridge.c", "src/nop_decode.h", "src/wine_bootstrap.c", "src/Info.plist",
     "src/priv_decode.h",
     "src/lsass.c",
+    "src/intl_service_wrapper.c", "scripts/install_webview_fix.py",
+    "tests/test_webview_install.py",
     "tests/test_install_config.py",
     "tests/process_exit_status.c", "tests/thread_context_test.c", "tests/mdl_mapping_test.c",
     "tests/native_probe.c", "tests/decoder_test.c", "tests/windows_probe.c",
@@ -26,11 +28,12 @@ FILES = [
     "patches/crossover-26.1-thread-process-experimental.patch",
     "patches/crossover-26.1-september-update.patch",
     "docs/UPDATE-2026-09-22.zh-CN.md", "docs/UPDATE-2026-09-22.en.md",
+    "docs/UPDATE-2026-09-26.zh-CN.md", "docs/UPDATE-2026-09-26.en.md",
     "docs/VALIDATION.md", "docs/ARCHITECTURE.md",
 ]
 
 def main():
-    output = ROOT / "build/nikke-crossover-compat-0.2.0-source.zip"
+    output = ROOT / "build/nikke-crossover-compat-0.2.1-source.zip"
     output.parent.mkdir(exist_ok=True)
     for name in FILES:
         path = ROOT / name
@@ -38,7 +41,7 @@ def main():
             raise ValueError(f"missing or non-regular source file: {name}")
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name in FILES:
-            info = zipfile.ZipInfo(f"nikke-crossover-compat/{name}", (2026, 9, 22, 0, 0, 0))
+            info = zipfile.ZipInfo(f"nikke-crossover-compat/{name}", (2026, 9, 26, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o100644 << 16
             archive.writestr(info, (ROOT / name).read_bytes())
