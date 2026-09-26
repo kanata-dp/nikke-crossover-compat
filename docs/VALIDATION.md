@@ -1,3 +1,38 @@
+# Validation — 2026-09-26
+
+## Login CAPTCHA and 152.8.13 follow-up
+
+The launcher browser and login-verification browser use separate hosts.
+Adding `--disable-gpu --disable-gpu-compositing --in-process-gpu` to the
+`intl_service.exe` host made the previously blank CAPTCHA visible. The user
+completed it manually; the launcher then displayed its signed-in home page.
+The original service, WebView helper and DLL contents were preserved. No
+verification result was automated, substituted or suppressed.
+
+The saved CrossOver entry still loaded an earlier runtime. It was separately
+upgraded to the existing clean 0.2.0 kernel/media/system-process build, while
+retaining the browser fix and launcher entry. NIKKE PC Global 152.8.13 then
+completed resource downloads, reached the lobby, and the user confirmed that
+pages could be opened and closed normally. This round adds login and lobby
+evidence, not a new combat or long-session test. The two background CORE
+failures described below remain unresolved.
+
+The 0.2.1 source wrapper compiled with MinGW-w64 and warnings treated as errors.
+Twelve new offline WebView installer tests and the existing installer test
+passed, covering original-file preservation, install/restore/reinstall,
+official-update conflicts, unmanaged backups, invalid inputs, external
+symlinks, interrupted replacement and process-query failures.
+The source packager uses an explicit allowlist. The public installer itself
+was tested on authored fixtures, not reinstalled into the running game bottle;
+the live CAPTCHA test used its manually installed predecessor with equivalent
+rendering options and forwarding behavior. The unchanged native/Wine API
+suite was not rerun for this browser-only source update.
+
+See the [English](UPDATE-2026-09-26.en.md) or
+[Chinese](UPDATE-2026-09-26.zh-CN.md) installation and restore instructions.
+
+---
+
 # Validation — 2026-09-22
 
 ## Current result and provenance
